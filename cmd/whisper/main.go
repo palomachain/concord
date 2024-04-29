@@ -19,10 +19,18 @@ import (
 
 const cSignedMessagePrefix = "\x19Ethereum Signed Message:\n32"
 
+var (
+	version string
+	commit  string
+)
+
 func main() {
 	log.SetOutput(os.Stdout)
-	log.Println("👷 Setting up whisper...")
+	if printVersion() {
+		return
+	}
 
+	log.Println("👷 Setting up whisper...")
 	cfgPath, url, err := parseArgs()
 	if err != nil {
 		log.Fatalf("😿 %v", err)
@@ -214,4 +222,13 @@ func (s Signer) sign(bytes []byte) ([]byte, error) {
 		accounts.Account{Address: s.addr},
 		bytes,
 	)
+}
+
+func printVersion() bool {
+	if len(os.Args) < 2 || os.Args[1] != "version" {
+		return false
+	}
+
+	fmt.Printf("Concord\nVersion: %s\nCommit: %s\n", config.Version(), config.Commit())
+	return true
 }
