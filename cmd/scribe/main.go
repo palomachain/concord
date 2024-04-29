@@ -41,8 +41,6 @@ const (
 	// Last observed blockheight of used snapshot
 	// https://download.palomachain.com/paloma_15681076.tar.lz4
 	cLastSnapshotBlockheight int64 = 15681076
-
-	cSignedMessagePrefix = "\x19Ethereum Signed Message:\n32"
 )
 
 func main() {
@@ -67,7 +65,9 @@ func populate() bool {
 		log.Fatalf("bson.Marhal: %v", err)
 	}
 
-	db.Put([]byte("msg"), bz, nil)
+	if err := db.Put([]byte("msg"), bz, nil); err != nil {
+		log.Fatalf("failed to persist message: %v", err)
+	}
 
 	return true
 }

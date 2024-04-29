@@ -57,7 +57,9 @@ func main() {
 		}
 
 		w.Header().Add("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(msgs)
+		if err := json.NewEncoder(w).Encode(msgs); err != nil {
+			slog.With("error", err).Warn("Failed to encode response.")
+		}
 	})
 
 	router.HandleFunc("GET /message/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +85,9 @@ func main() {
 		}
 
 		w.Header().Add("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(msg)
+		if err := json.NewEncoder(w).Encode(msg); err != nil {
+			slog.With("error", err).Warn("Failed to encode response.")
+		}
 	})
 
 	router.HandleFunc("GET /signer/{id}/messages", func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +123,9 @@ func main() {
 		}
 
 		w.Header().Add("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(msgsToSign)
+		if err := json.NewEncoder(w).Encode(msgsToSign); err != nil {
+			slog.With("error", err).Warn("Failed to encode response.")
+		}
 	})
 
 	router.HandleFunc("POST /signature", func(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +168,11 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":8080", router)
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		slog.With("error", err).Warn("HTTP server failed")
+	}
+
+	slog.Info("Goodbye!")
 }
 
 func verifySignature(msg, sig, address []byte) bool {
