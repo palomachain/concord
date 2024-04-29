@@ -33,8 +33,20 @@ builds:
       - amd64
 
 archives:
-  - name_template: >-
-      {{ .ProjectName }}_
+  - builds:
+    - concord
+    name_template: >-
+      concord_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+  - builds:
+    - whisper
+    name_template: >-
+      whisper_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
