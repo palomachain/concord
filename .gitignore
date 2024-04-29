@@ -4,4 +4,5 @@ dist/
 build/
 .idea
 .scratch/
-
+data/
+*.env

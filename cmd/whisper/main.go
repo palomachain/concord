@@ -13,8 +13,8 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/go-resty/resty/v2"
-	"github.com/palomachain/pigeon/chain"
-	"github.com/palomachain/pigeon/config"
+	"github.com/palomachain/concord/config"
+	"github.com/palomachain/concord/types"
 )
 
 const cSignedMessagePrefix = "\x19Ethereum Signed Message:\n32"
@@ -82,7 +82,7 @@ func run(s *Signer, u string) {
 
 func update(signer *Signer, url string) {
 	r := resty.New()
-	var msgsToSign []chain.QueuedMessage
+	var msgsToSign []types.QueuedMessage
 	if _, err := r.R().SetPathParam("id", signer.addr.Hex()).SetResult(&msgsToSign).Get(url + "/signer/{id}/messages"); err != nil {
 		log.Fatalf("failed to query messages: %v", err)
 	}
@@ -98,7 +98,7 @@ func update(signer *Signer, url string) {
 	}
 }
 
-func signMessage(signer *Signer, url string, msg chain.QueuedMessage, r *resty.Client) {
+func signMessage(signer *Signer, url string, msg types.QueuedMessage, r *resty.Client) {
 	// calculate signature using private key
 	msgBytes := crypto.Keccak256(
 		append(
@@ -115,7 +115,7 @@ func signMessage(signer *Signer, url string, msg chain.QueuedMessage, r *resty.C
 		log.Fatal("failed to verify signature.")
 	}
 
-	signedMsg := chain.SignedQueuedMessage{
+	signedMsg := types.SignedQueuedMessage{
 		QueuedMessage:   msg,
 		Signature:       sig,
 		SignedByAddress: signer.addr.Hex(),

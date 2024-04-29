@@ -17,8 +17,8 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/palomachain/concord/types"
 	evmtypes "github.com/palomachain/paloma/x/evm/types"
-	"github.com/palomachain/pigeon/chain"
 	"github.com/syndtr/goleveldb/leveldb"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -62,7 +62,7 @@ type SigningInfo struct {
 }
 
 type MessageWithSigners struct {
-	Message chain.QueuedMessage
+	Message types.QueuedMessage
 	Signers []SigningInfo
 }
 
@@ -133,7 +133,7 @@ func main() {
 			return
 		}
 
-		msgsToSign := make([]chain.QueuedMessage, 0, len(db.p))
+		msgsToSign := make([]types.QueuedMessage, 0, len(db.p))
 		signerAddress := ethcommon.HexToAddress(signer)
 		for key, store := range db.p {
 			_, err := store.Get(signerAddress.Bytes(), nil)
@@ -163,7 +163,7 @@ func main() {
 	})
 
 	router.HandleFunc("POST /signature", func(w http.ResponseWriter, r *http.Request) {
-		var signedMessage chain.SignedQueuedMessage
+		var signedMessage types.SignedQueuedMessage
 		if err := json.NewDecoder(r.Body).Decode(&signedMessage); err != nil {
 			slog.With("error", err).Warn("Failed to decode json.")
 			w.WriteHeader(http.StatusBadRequest)
@@ -292,15 +292,15 @@ func populate() bool {
 	return true
 }
 
-func getMsgFromStore(store *leveldb.DB) (chain.QueuedMessage, error) {
+func getMsgFromStore(store *leveldb.DB) (types.QueuedMessage, error) {
 	msgBz, err := store.Get([]byte("msg"), nil)
 	if err != nil {
-		return chain.QueuedMessage{}, fmt.Errorf("failed to get message from store: %w", err)
+		return types.QueuedMessage{}, fmt.Errorf("failed to get message from store: %w", err)
 	}
 
-	var msg chain.QueuedMessage
+	var msg types.QueuedMessage
 	if err := bson.Unmarshal(msgBz, &msg); err != nil {
-		return chain.QueuedMessage{}, fmt.Errorf("failed to unmarshal serialized message: %w", err)
+		return types.QueuedMessage{}, fmt.Errorf("failed to unmarshal serialized message: %w", err)
 	}
 
 	return msg, nil
@@ -330,7 +330,7 @@ func getMsgWithSignersFromStore(store *leveldb.DB) (MessageWithSigners, error) {
 	return mws, nil
 }
 
-func constructMessage() chain.QueuedMessage {
+func constructMessage() types.QueuedMessage {
 	// Turnstone ID is the unique ID of the target smart contract
 	// It's available as b64 notation string from within the snapshot used
 	// But is stored as direct string cast of the underlaying byte slice
@@ -350,7 +350,7 @@ func constructMessage() chain.QueuedMessage {
 		log.Fatal("failed to parse payload bytes:", err)
 	}
 
-	return chain.QueuedMessage{
+	return types.QueuedMessage{
 		ID:               cMessageID,
 		Nonce:            nonce,
 		BytesToSign:      bytes,
