@@ -206,7 +206,7 @@ func newSigner(cfg *config.EVM) *Signer {
 	acc := accounts.Account{Address: s.addr}
 
 	if err := s.keystore.Unlock(acc, config.KeyringPassword(cfg.KeyringPassEnvName)); err != nil {
-		panic(fmt.Sprintf("failed to unlock account with keystore: %w", err))
+		panic(fmt.Sprintf("failed to unlock account with keystore: %v", err))
 	}
 
 	return s
