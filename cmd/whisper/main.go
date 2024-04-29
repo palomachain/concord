@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,18 +21,13 @@ import (
 
 const cSignedMessagePrefix = "\x19Ethereum Signed Message:\n32"
 
-var (
-	version string
-	commit  string
-)
-
 func main() {
 	log.SetOutput(os.Stdout)
 	if printVersion() {
 		return
 	}
 
-	log.Println("👷 Setting up whisper...")
+	slog.With("version", config.Version()).Info("👷 Setting up whisper...")
 	cfgPath, url, err := parseArgs()
 	if err != nil {
 		log.Fatalf("😿 %v", err)
@@ -40,9 +37,10 @@ func main() {
 	ethCfg := getEthConfig(cfg)
 	signer := newSigner(ethCfg)
 
-	log.Println("✅ Done!")
+	slog.Info("✅ Done!")
 
-	go run(signer, url)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	go run(ctx, signer, url)
 
 	// Listen for termination signals
 	signalCh := make(chan os.Signal, 1)
@@ -51,7 +49,12 @@ func main() {
 	// Wait for termination signal
 	<-signalCh
 
-	fmt.Println("\n👋 GG")
+	slog.Info("Shutting down...")
+	cancelCtx()
+
+	<-ctx.Done()
+
+	slog.Info("\n👋 GG")
 }
 
 func parseArgs() (string, string, error) {
@@ -62,28 +65,19 @@ func parseArgs() (string, string, error) {
 	return os.Args[1], os.Args[2], nil
 }
 
-func run(s *Signer, u string) {
-	icons := []string{"🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚", "🕛"}
-	idx := 0
-	spinnerTicker := time.NewTicker(time.Millisecond * 500)
+func run(ctx context.Context, s *Signer, u string) {
 	updateTicker := time.NewTicker(time.Minute)
+	slog.Info("🕑 Monitoring messages to sign...")
 
 	// initial query
 	update(s, u)
 
-	fmt.Printf("%s Monitoring messages to sign...", icons[idx])
 	for {
 		select {
-		case <-spinnerTicker.C:
-			idx++
-			if idx > len(icons)-1 {
-				idx = 0
-			}
-			fmt.Printf("\r%s Monitoring messages to sign...", icons[idx])
+		case <-ctx.Done():
+			return
 		case <-updateTicker.C:
-			spinnerTicker.Stop()
 			update(s, u)
-			spinnerTicker.Reset(time.Millisecond * 500)
 		}
 	}
 }
@@ -96,12 +90,13 @@ func update(signer *Signer, url string) {
 	}
 
 	if len(msgsToSign) < 1 {
+		slog.Info("Retrieved 0 outstanding messages...")
 		return
 	}
 
-	log.Printf("\nFound %d messages ...\n", len(msgsToSign))
+	slog.Info(fmt.Sprintf("Found %d messages...", len(msgsToSign)))
 	for _, v := range msgsToSign {
-		log.Printf("Signing message %v...\n", v.ID)
+		slog.With("msg-id", v.ID).Info("Signing message ...")
 		signMessage(signer, url, v, r)
 	}
 }
@@ -211,7 +206,7 @@ func newSigner(cfg *config.EVM) *Signer {
 	acc := accounts.Account{Address: s.addr}
 
 	if err := s.keystore.Unlock(acc, config.KeyringPassword(cfg.KeyringPassEnvName)); err != nil {
-		panic(fmt.Sprintf("failed to unlock account with keystore: %w", err))
+		panic(fmt.Sprintf("failed to unlock account with keystore: %v", err))
 	}
 
 	return s
