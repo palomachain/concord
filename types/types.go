@@ -1,9 +1,5 @@
 package types
 
-import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-)
-
 type QueuedMessage struct {
 	Msg              any
 	Nonce            []byte
@@ -20,10 +16,10 @@ type SignedQueuedMessage struct {
 }
 
 type ValidatorSignature struct {
-	ValAddress      sdk.ValAddress
+	// ValAddress      sdk.ValAddress
 	Signature       []byte
 	SignedByAddress string
-	PublicKey       []byte
+	// PublicKey       []byte
 }
 
 type MessageWithSignatures struct {

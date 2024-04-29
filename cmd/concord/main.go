@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,45 +10,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
-	"cosmossdk.io/math"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/palomachain/concord/config"
 	"github.com/palomachain/concord/types"
-	evmtypes "github.com/palomachain/paloma/x/evm/types"
 	"github.com/syndtr/goleveldb/leveldb"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
 const (
-	// Last observed message ID on target chain compass + 1000
-	// See: https://etherscan.io/tx/0x81263ea3145ad2a4a846d5c9f1ee7d434e5ddbebb90c5dd3098b402d8cfb9a67
-	cMessageID uint64 = 467095 + 1002
-
-	// Base64 notation of the deployed compass unqiue ID
-	cSmartContractUniqueIDAsBase64 string = "ODg3MjMwOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-
-	// Chain reference ID of the target chain this message will be relayed to.
-	cChainReferenceID string = "eth-main"
-
-	// Address of deployed compass on Ethereum mainnet for chain ID
-	// messenger.
-	// See: https://etherscan.io/address/0xB01cC20Fe02723d43822819ec57fCbadf31f1537
-	cCompassAddress string = "0xB01cC20Fe02723d43822819ec57fCbadf31f1537"
-
-	// Operator address for the VolumeFi validator,
-	// in charge of manually relaying this message upon
-	// finished signature collection.
-	// See: https://paloma.explorers.guru/validator/palomavaloper1wm4y8yhppxud6j5wvwr7fyynhh09tmv5fy845g
-	cVolumeFiOperatorAddress string = "palomavaloper1wm4y8yhppxud6j5wvwr7fyynhh09tmv5fy845g"
-
-	// Last observed blockheight of used snapshot
-	// https://download.palomachain.com/paloma_15681076.tar.lz4
-	cLastSnapshotBlockheight int64 = 15681076
-
 	cSignedMessagePrefix = "\x19Ethereum Signed Message:\n32"
 )
 
@@ -57,31 +29,16 @@ type dba struct {
 	p map[string]*leveldb.DB
 }
 
-type SigningInfo struct {
-	SignedByAddress string
-	Signature       string
-}
-
-type MessageWithSigners struct {
-	Message types.QueuedMessage
-	Signers []SigningInfo
-}
-
 func main() {
 	log.SetOutput(os.Stdout)
 	if printVersion() {
 		return
 	}
-	if populate() {
-		return
-	}
 
-	slog.Info("Server startup...")
+	slog.With("version", config.Version()).Info("Server startup...")
 	db := newDb()
-	if err := db.scan(); err != nil {
-		log.Fatalf("Failed to scan stores: %v", err)
-	}
 	defer db.close()
+	go db.watch()
 
 	router := http.NewServeMux()
 
@@ -90,7 +47,7 @@ func main() {
 	})
 
 	router.HandleFunc("GET /messages", func(w http.ResponseWriter, _ *http.Request) {
-		msgs := make([]MessageWithSigners, 0, len(db.p))
+		msgs := make([]types.MessageWithSignatures, 0, len(db.p))
 		for key, store := range db.p {
 			mws, err := getMsgWithSignersFromStore(store)
 			if err != nil {
@@ -233,6 +190,23 @@ func newDb() *dba {
 	}
 }
 
+func (d *dba) watch() {
+	watchTicker := time.NewTicker(time.Minute)
+	slog.Info("Watching for new messages...")
+
+	// initial query
+	if err := d.scan(); err != nil {
+		log.Fatalf("failed to watch file system for new messages: %v", err)
+	}
+
+	for {
+		<-watchTicker.C
+		if err := d.scan(); err != nil {
+			log.Fatalf("failed to watch file system for new messages: %v", err)
+		}
+	}
+}
+
 func (d *dba) scan() error {
 	files, err := os.ReadDir("./data")
 	if err != nil {
@@ -283,13 +257,13 @@ func getMsgFromStore(store *leveldb.DB) (types.QueuedMessage, error) {
 	return msg, nil
 }
 
-func getMsgWithSignersFromStore(store *leveldb.DB) (MessageWithSigners, error) {
+func getMsgWithSignersFromStore(store *leveldb.DB) (types.MessageWithSignatures, error) {
 	msg, err := getMsgFromStore(store)
 	if err != nil {
-		return MessageWithSigners{}, fmt.Errorf("failed to get message from store: %v", err)
+		return types.MessageWithSignatures{}, fmt.Errorf("failed to get message from store: %v", err)
 	}
 
-	mws := MessageWithSigners{Message: msg, Signers: make([]SigningInfo, 0, 64)}
+	mws := types.MessageWithSignatures{QueuedMessage: msg, Signatures: make([]types.ValidatorSignature, 0, 64)}
 	iter := store.NewIterator(nil, nil)
 	for iter.Next() {
 		if string(iter.Key()) == "msg" {
@@ -297,10 +271,9 @@ func getMsgWithSignersFromStore(store *leveldb.DB) (MessageWithSigners, error) {
 		}
 
 		addr := ethcommon.BytesToAddress(iter.Key())
-		sig := ethcommon.Bytes2Hex(iter.Value())
-		mws.Signers = append(mws.Signers, SigningInfo{
+		mws.Signatures = append(mws.Signatures, types.ValidatorSignature{
+			Signature:       iter.Value(),
 			SignedByAddress: addr.Hex(),
-			Signature:       sig,
 		})
 	}
 
@@ -314,69 +287,4 @@ func printVersion() bool {
 
 	fmt.Printf("Concord\nVersion: %s\nCommit: %s\n", config.Version(), config.Commit())
 	return true
-}
-
-func populate() bool {
-	if len(os.Args) < 2 || os.Args[1] != "populate" {
-		return false
-	}
-
-	msg := constructMessage()
-	newpath := filepath.Join(".", "data")
-	if err := os.MkdirAll(newpath, os.ModePerm); err != nil {
-		log.Fatalf("failed to create data dir: %v", err)
-	}
-
-	db, err := leveldb.OpenFile(fmt.Sprintf("./data/%v.db", msg.ID), nil)
-	if err != nil {
-		log.Fatalf("failed to open db: %v", err)
-	}
-
-	bz, err := bson.Marshal(msg)
-	if err != nil {
-		log.Fatalf("bson.Marhal: %v", err)
-	}
-
-	db.Put([]byte("msg"), bz, nil)
-
-	return true
-}
-
-func constructMessage() types.QueuedMessage {
-	// Turnstone ID is the unique ID of the target smart contract
-	// It's available as b64 notation string from within the snapshot used
-	// But is stored as direct string cast of the underlaying byte slice
-	// when constructing this message.
-	// See: https://github.com/palomachain/paloma/blob/e1433cb86bc94b6bf51fda38898384ebd52add52/x/evm/keeper/keeper.go#L619
-	turnstoneID, err := base64.StdEncoding.DecodeString(cSmartContractUniqueIDAsBase64)
-	if err != nil {
-		log.Fatal("failed to parse smart contract unique ID:", err)
-	}
-
-	// Nonce is identical to message ID, but wrapped into []byte
-	// see: https://github.com/palomachain/paloma/blob/e1433cb86bc94b6bf51fda38898384ebd52add52/x/consensus/keeper/concensus_keeper.go#L644
-	nonce := sdk.Uint64ToBigEndian(cMessageID)
-
-	bytes, err := hexutil.Decode("0xfdca5e1f000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000d3e576b5dcde3580420a5ef78f3639ba9cd1b9670000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000b49dea7d6af04bd085ee67c528488f15af2559b54a5207693f678d4f4a355aa63da3979e804cadb2")
-	if err != nil {
-		log.Fatal("failed to parse payload bytes:", err)
-	}
-
-	return types.QueuedMessage{
-		ID:               cMessageID,
-		Nonce:            nonce,
-		BytesToSign:      bytes,
-		PublicAccessData: nil,
-		ErrorData:        nil,
-		Msg: &evmtypes.Message{
-			TurnstoneID:      string(turnstoneID),
-			ChainReferenceID: cChainReferenceID,
-			Action: &evmtypes.Message_SubmitLogicCall{
-				SubmitLogicCall: &evmtypes.SubmitLogicCall{},
-			},
-			CompassAddr:           cCompassAddress,
-			Assignee:              cVolumeFiOperatorAddress,
-			AssignedAtBlockHeight: math.NewInt(cLastSnapshotBlockheight),
-		},
-	}
 }
