@@ -1,7 +1,8 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
 builds:
-  - main: ./cmd/concord
+  - id: "concord"
+    main: ./cmd/concord
     binary: concord
     tags:
       - netgo
@@ -9,13 +10,14 @@ builds:
       - ledger
     ldflags:
       - -s -w
-      - -x github.com/palomachain/concord/app.version={{ .tag }}
-      - -x github.com/palomachain/concord/app.commit={{ .fullcommit }}
+      - -x github.com/palomachain/concord/config.version={{ .tag }}
+      - -x github.com/palomachain/concord/config.commit={{ .fullcommit }}
     goos:
       - linux
     goarch:
       - amd64
-  - main: ./cmd/whisper
+  - id: "whisper"
+    main: ./cmd/whisper
     binary: whisper
     tags:
       - netgo
@@ -23,8 +25,8 @@ builds:
       - ledger
     ldflags:
       - -s -w
-      - -x github.com/palomachain/whisper/app.version={{ .tag }}
-      - -x github.com/palomachain/whisper/app.commit={{ .fullcommit }}
+      - -x github.com/palomachain/concord/config.version={{ .tag }}
+      - -x github.com/palomachain/concord/config.commit={{ .fullcommit }}
     goos:
       - linux
     goarch:
