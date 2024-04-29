@@ -5,7 +5,7 @@ COMMIT               := $(shell git log -1 --format='%H')
 BUILD_DIR            ?= $(CURDIR)/build
 GOLANGCILINT_VERSION := 1.51.2
 
-.PHONY: install-linter install-abigen build build-linux
+.PHONY: install-linter install-abigen concord concord-linux whisper whisper-linux
 
 ###############################################################################
 ##                                  Version                                  ##
@@ -23,8 +23,8 @@ ldflags = -X github.com/cosmos/cosmos-sdk/version.Name=pigeon \
 		  -X github.com/cosmos/cosmos-sdk/version.AppName=pigeon \
 		  -X github.com/cosmos/cosmos-sdk/version.Version=$(VERSION) \
 		  -X github.com/cosmos/cosmos-sdk/version.Commit=$(COMMIT) \
-		  -X github.com/palomachain/pigeon/app.version=$(VERSION) \
-		  -X github.com/palomachain/pigeon/app.commit=$(COMMIT) \
+		  -X github.com/palomachain/concord/config.version=$(VERSION) \
+		  -X github.com/palomachain/concord/config.commit=$(COMMIT) \
 
 ldflags += $(LDFLAGS)
 ldflags := $(strip $(ldflags))
@@ -57,12 +57,19 @@ go.sum: go.mod
 	@echo "--> Ensure dependencies have not been modified"
 	@go mod verify
 
-build: go.sum
+concord: go.sum
 	@echo "--> Building..."
-	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILD_DIR)/ ./...
+	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILD_DIR)/ ./cmd/concord
 
-build-linux: go.sum
-	GOOS=linux GOARCH=amd64 $(MAKE) build
+concord-linux: go.sum
+	GOOS=linux GOARCH=amd64 $(MAKE) concord
+
+whisper: go.sum
+	@echo "--> Building..."
+	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILD_DIR)/ ./cmd/whisper
+
+whisper-linux: go.sum
+	GOOS=linux GOARCH=amd64 $(MAKE) whisper
 
 test:
 	@echo "--> Testing..."

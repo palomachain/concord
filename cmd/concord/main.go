@@ -17,6 +17,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/palomachain/concord/config"
 	"github.com/palomachain/concord/types"
 	evmtypes "github.com/palomachain/paloma/x/evm/types"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -68,12 +69,14 @@ type MessageWithSigners struct {
 
 func main() {
 	log.SetOutput(os.Stdout)
-	slog.Info("Server startup...")
-
+	if printVersion() {
+		return
+	}
 	if populate() {
 		return
 	}
 
+	slog.Info("Server startup...")
 	db := newDb()
 	if err := db.scan(); err != nil {
 		log.Fatalf("Failed to scan stores: %v", err)
@@ -266,32 +269,6 @@ func (d *dba) close() {
 	}
 }
 
-func populate() bool {
-	if len(os.Args) < 2 || os.Args[1] != "populate" {
-		return false
-	}
-
-	msg := constructMessage()
-	newpath := filepath.Join(".", "data")
-	if err := os.MkdirAll(newpath, os.ModePerm); err != nil {
-		log.Fatalf("failed to create data dir: %v", err)
-	}
-
-	db, err := leveldb.OpenFile(fmt.Sprintf("./data/%v.db", msg.ID), nil)
-	if err != nil {
-		log.Fatalf("failed to open db: %v", err)
-	}
-
-	bz, err := bson.Marshal(msg)
-	if err != nil {
-		log.Fatalf("bson.Marhal: %v", err)
-	}
-
-	db.Put([]byte("msg"), bz, nil)
-
-	return true
-}
-
 func getMsgFromStore(store *leveldb.DB) (types.QueuedMessage, error) {
 	msgBz, err := store.Get([]byte("msg"), nil)
 	if err != nil {
@@ -328,6 +305,41 @@ func getMsgWithSignersFromStore(store *leveldb.DB) (MessageWithSigners, error) {
 	}
 
 	return mws, nil
+}
+
+func printVersion() bool {
+	if len(os.Args) < 2 || os.Args[1] != "version" {
+		return false
+	}
+
+	fmt.Printf("Concord\nVersion: %s\nCommit: %s\n", config.Version(), config.Commit())
+	return true
+}
+
+func populate() bool {
+	if len(os.Args) < 2 || os.Args[1] != "populate" {
+		return false
+	}
+
+	msg := constructMessage()
+	newpath := filepath.Join(".", "data")
+	if err := os.MkdirAll(newpath, os.ModePerm); err != nil {
+		log.Fatalf("failed to create data dir: %v", err)
+	}
+
+	db, err := leveldb.OpenFile(fmt.Sprintf("./data/%v.db", msg.ID), nil)
+	if err != nil {
+		log.Fatalf("failed to open db: %v", err)
+	}
+
+	bz, err := bson.Marshal(msg)
+	if err != nil {
+		log.Fatalf("bson.Marhal: %v", err)
+	}
+
+	db.Put([]byte("msg"), bz, nil)
+
+	return true
 }
 
 func constructMessage() types.QueuedMessage {
