@@ -1,16 +1,30 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
 builds:
-  - main: ./cmd/pigeon
-    binary: pigeon
+  - main: ./cmd/concord
+    binary: concord
     tags:
       - netgo
       - gcc
       - ledger
     ldflags:
       - -s -w
-      - -X github.com/palomachain/pigeon/app.version={{ .Tag }}
-      - -X github.com/palomachain/pigeon/app.commit={{ .FullCommit }}
+      - -x github.com/palomachain/concord/app.version={{ .tag }}
+      - -x github.com/palomachain/concord/app.commit={{ .fullcommit }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - main: ./cmd/whisper
+    binary: whisper
+    tags:
+      - netgo
+      - gcc
+      - ledger
+    ldflags:
+      - -s -w
+      - -x github.com/palomachain/whisper/app.version={{ .tag }}
+      - -x github.com/palomachain/whisper/app.commit={{ .fullcommit }}
     goos:
       - linux
     goarch:

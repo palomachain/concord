@@ -1,6 +1,6 @@
 module github.com/palomachain/pigeon
 
-go 1.21
+go 1.22.2
 
 require (
 	cosmossdk.io/errors v1.0.1
@@ -28,6 +28,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.9.0
+	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
+	go.mongodb.org/mongo-driver v1.15.0
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
 	golang.org/x/term v0.17.0
 	google.golang.org/grpc v1.62.0
@@ -189,7 +191,6 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
-	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tendermint/go-amino v0.16.0 // indirect
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
