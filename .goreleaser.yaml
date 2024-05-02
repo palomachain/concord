@@ -31,6 +31,36 @@ builds:
       - linux
     goarch:
       - amd64
+  - id: "scribe"
+    main: ./cmd/scribe
+    binary: scribe
+    tags:
+      - netgo
+      - gcc
+      - ledger
+    ldflags:
+      - -s -w
+      - -X github.com/palomachain/concord/config.version={{ .Tag }}
+      - -X github.com/palomachain/concord/config.commit={{ .FullCommit }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - id: "relay"
+    main: ./cmd/relay
+    binary: relay
+    tags:
+      - netgo
+      - gcc
+      - ledger
+    ldflags:
+      - -s -w
+      - -X github.com/palomachain/concord/config.version={{ .Tag }}
+      - -X github.com/palomachain/concord/config.commit={{ .FullCommit }}
+    goos:
+      - linux
+    goarch:
+      - amd64
 
 archives:
   - id: "concord"
@@ -49,6 +79,28 @@ archives:
     - whisper
     name_template: >-
       whisper_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+  - id: "scribe"
+    builds:
+    - scribe
+    name_template: >-
+      scribe_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+  - id: "relay"
+    builds:
+    - relay
+    name_template: >-
+      relay_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}

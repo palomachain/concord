@@ -26,7 +26,7 @@ const (
 )
 
 type dba struct {
-	p map[string]*leveldb.DB
+	p map[string]struct{}
 }
 
 func main() {
@@ -37,7 +37,6 @@ func main() {
 
 	slog.With("version", config.Version()).Info("Server startup...")
 	db := newDb()
-	defer db.close()
 	go db.watch()
 
 	router := http.NewServeMux()
@@ -48,7 +47,12 @@ func main() {
 
 	router.HandleFunc("GET /messages", func(w http.ResponseWriter, _ *http.Request) {
 		msgs := make([]types.MessageWithSignatures, 0, len(db.p))
-		for key, store := range db.p {
+		for key := range db.p {
+			store, err := db.getStore(key)
+			if err != nil {
+				slog.With("msg-id", key).With("error", err).Warn("Failed to open store.")
+			}
+			defer store.Close()
 			mws, err := getMsgWithSignersFromStore(store)
 			if err != nil {
 				slog.With("msg-id", key).With("error", err).Warn("Failed to get message from store.")
@@ -70,12 +74,13 @@ func main() {
 			return
 		}
 
-		store, fnd := db.p[r.PathValue("id")]
-		if !fnd {
-			slog.With("msg-id", msgId).Warn("Unknown message ID.")
+		store, err := db.getStore(r.PathValue("id"))
+		if err != nil {
+			slog.With("msg-id", msgId).With("error", err).Warn("Unknown message ID.")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		defer store.Close()
 
 		msg, err := getMsgWithSignersFromStore(store)
 		if err != nil {
@@ -99,8 +104,15 @@ func main() {
 
 		msgsToSign := make([]types.QueuedMessage, 0, len(db.p))
 		signerAddress := ethcommon.HexToAddress(signer)
-		for key, store := range db.p {
-			_, err := store.Get(signerAddress.Bytes(), nil)
+		for key := range db.p {
+			store, err := db.getStore(key)
+			if err != nil {
+				slog.With("msg-id", key).With("error", err).Warn("Failed to open store")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			defer store.Close()
+			_, err = store.Get(signerAddress.Bytes(), nil)
 			if err == nil {
 				// Looks like this message was already signed.
 				continue
@@ -150,7 +162,14 @@ func main() {
 			return
 		}
 
-		if _, err := db.p[key].Get(addr, nil); err == nil {
+		store, err := db.getStore(key)
+		if err != nil {
+			slog.With("msg-id", signedMessage.ID).With("signer", signedMessage.SignedByAddress).Warn("Failed to open store.")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		defer store.Close()
+		if _, err := store.Get(addr, nil); err == nil {
 			slog.With("msg-id", signedMessage.ID).With("signer", signedMessage.SignedByAddress).Warn("Duplicate signature received.")
 			w.WriteHeader(http.StatusConflict)
 			return
@@ -163,7 +182,7 @@ func main() {
 		}
 
 		slog.With("msg-id", signedMessage.ID).With("signer", signedMessage.SignedByAddress).Info("Received signature.")
-		if err := db.p[key].Put(addr, signedMessage.Signature, nil); err != nil {
+		if err := store.Put(addr, signedMessage.Signature, nil); err != nil {
 			slog.With("msg-id", signedMessage.ID).With("signer", signedMessage.SignedByAddress).With("error", err).Warn("Failed to store signature.")
 		}
 	})
@@ -196,7 +215,7 @@ func verifySignature(msg, sig, address []byte) bool {
 
 func newDb() *dba {
 	return &dba{
-		p: make(map[string]*leveldb.DB),
+		p: make(map[string]struct{}),
 	}
 }
 
@@ -239,18 +258,22 @@ func (d *dba) scan() error {
 		}
 
 		slog.With("msg-id", item.Name()).Info("Found new message.")
-		d.p[name], err = leveldb.OpenFile("./data/"+item.Name(), nil)
+		tmpDb, err := leveldb.OpenFile("./data/"+item.Name(), nil)
 		if err != nil {
 			slog.With("msg-id", item.Name()).With("error", err).Warn("Failed to open store.")
 		}
+		d.p[name] = struct{}{}
+		tmpDb.Close()
 	}
 	return nil
 }
 
-func (d *dba) close() {
-	for _, v := range d.p {
-		v.Close()
+func (d *dba) getStore(key string) (*leveldb.DB, error) {
+	if _, fnd := d.p[key]; !fnd {
+		return nil, fmt.Errorf("key not found: %v", key)
 	}
+
+	return leveldb.OpenFile("./data/"+key+".db", nil)
 }
 
 func getMsgFromStore(store *leveldb.DB) (types.QueuedMessage, error) {
