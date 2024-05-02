@@ -4,12 +4,10 @@
 ## Instructions for Paloma Validators to run Whisper to Recover ETH from `messenger` blockchain's Compass-EVM.
 
 > [!NOTE]  
-> Whisper requires you to export all your pigeon environment variables used when you were on the `messenger` chain as a validator.
-
-No new server needed. Validators may install Whisper on the same machine they use for Pigeon, today.
+No new server needed. Validators **MUST** install Whisper on the same machine used for Paloma's Pigeon, today.
 
 ### Download the latest release of `whisper` and execute. 
-You will need your Pigeon configuration that was used with the `messenger` network of Paloma, including your Ethereum mainnet signing keys.
+You will need your Pigeon configuration to be the same as it was on the `messenger` network of Paloma, including your Ethereum mainnet signing keys.
 
 ### Install the binary
 
