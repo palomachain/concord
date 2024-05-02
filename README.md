@@ -18,19 +18,10 @@ sudo chmod +x /usr/local/bin/whisper
 
 ```
 
-### Run the binary
-Run the binary with two additional arguments:
-
-1. The path to your pigeon configuration file: this is used in order to apply your consensus key to the message. 
-2. The URL of the paloma server that will relay the stuck funds.
-
+### Run the binary as a service
+Set up whisper to run as a service configuration. Whisper will need to keep running until all validators have installed the binary and the messages were relayed. We will alert validators when whisper can be shut off and removed again.
 ```sh
-./whisper ~/.pigeon/config.yaml https://concord.palomachain.com
-```
-
-### To Run Whisper a service
-You can also run whisper using a simple service configuration:
-```sh
+cat <<EOT >/etc/systemd/system/whisper.service
 [Unit]
 Description=Whisper daemon
 After=network-online.target
@@ -48,5 +39,5 @@ ExecReload=
 
 [Install]
 WantedBy=multi-user.target
-
+EOT
 ```
