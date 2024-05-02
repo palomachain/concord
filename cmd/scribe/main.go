@@ -6,10 +6,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/palomachain/concord/config"
 	"github.com/palomachain/concord/types"
 	evmtypes "github.com/palomachain/paloma/x/evm/types"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -19,7 +21,7 @@ import (
 const (
 	// Last observed message ID on target chain compass + 1000
 	// See: https://etherscan.io/tx/0x81263ea3145ad2a4a846d5c9f1ee7d434e5ddbebb90c5dd3098b402d8cfb9a67
-	cMessageID uint64 = 467095 + 1003
+	cMessageID uint64 = 467095 + 1000
 
 	// Base64 notation of the deployed compass unqiue ID
 	cSmartContractUniqueIDAsBase64 string = "ODg3MjMwOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -44,12 +46,17 @@ const (
 )
 
 func main() {
-	fmt.Println("Adding new message...")
-	populate()
-}
+	if printVersion() {
+		return
+	}
 
-func populate() bool {
-	msg := constructMessage()
+	msgId, payload, err := parseArgs()
+	if err != nil {
+		log.Fatalf("failed to parse args: %v", err)
+	}
+
+	fmt.Println("Adding new message...")
+	msg := constructMessage(msgId, payload)
 	newpath := filepath.Join(".", "data")
 	if err := os.MkdirAll(newpath, os.ModePerm); err != nil {
 		log.Fatalf("failed to create data dir: %v", err)
@@ -69,10 +76,10 @@ func populate() bool {
 		log.Fatalf("failed to persist message: %v", err)
 	}
 
-	return true
+	fmt.Println("🎉 Done!")
 }
 
-func constructMessage() types.QueuedMessage {
+func constructMessage(msgId uint64, payload string) types.QueuedMessage {
 	// Turnstone ID is the unique ID of the target smart contract
 	// It's available as b64 notation string from within the snapshot used
 	// But is stored as direct string cast of the underlaying byte slice
@@ -87,13 +94,13 @@ func constructMessage() types.QueuedMessage {
 	// see: https://github.com/palomachain/paloma/blob/e1433cb86bc94b6bf51fda38898384ebd52add52/x/consensus/keeper/concensus_keeper.go#L644
 	nonce := sdk.Uint64ToBigEndian(cMessageID)
 
-	bytes, err := hexutil.Decode("0xfdca5e1f000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000d3e576b5dcde3580420a5ef78f3639ba9cd1b9670000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000b49dea7d6af04bd085ee67c528488f15af2559b54a5207693f678d4f4a355aa63da3979e804cadb2")
+	bytes, err := hexutil.Decode(payload)
 	if err != nil {
 		log.Fatal("failed to parse payload bytes:", err)
 	}
 
 	return types.QueuedMessage{
-		ID:               cMessageID,
+		ID:               msgId,
 		Nonce:            nonce,
 		BytesToSign:      bytes,
 		PublicAccessData: nil,
@@ -109,4 +116,22 @@ func constructMessage() types.QueuedMessage {
 			AssignedAtBlockHeight: math.NewInt(cLastSnapshotBlockheight),
 		},
 	}
+}
+
+func printVersion() bool {
+	if len(os.Args) < 2 || os.Args[1] != "version" {
+		return false
+	}
+
+	fmt.Printf("Scribe\nVersion: %s\nCommit: %s\n", config.Version(), config.Commit())
+	return true
+}
+
+func parseArgs() (uint64, string, error) {
+	if len(os.Args) != 3 {
+		return 0, "", fmt.Errorf("expected exactly 2 arguments")
+	}
+
+	id, err := strconv.ParseUint(os.Args[1], 10, 64)
+	return id, os.Args[2], err
 }
