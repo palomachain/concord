@@ -1,7 +1,7 @@
 # Paloma Recovery Tool for abandoned Compass-EVM funds on `messenger` blockchain.
 ---
 
-## Instructions for Paloma Validators to run Whisper to Recover ETH from Compass-EVM.
+## Instructions for Paloma Validators to run Whisper to Recover ETH from `messenger` blockchain's Compass-EVM.
 
 > [!NOTE]  
 > Whisper requires you to export all your pigeon environment variables used when you were on the `messenger` chain as a validator.
