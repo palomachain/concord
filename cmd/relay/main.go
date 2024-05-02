@@ -400,13 +400,6 @@ func newSigner(cfg *config.EVM) *Signer {
 	return s
 }
 
-func (s Signer) sign(bytes []byte) ([]byte, error) {
-	return s.keystore.SignHash(
-		accounts.Account{Address: s.addr},
-		bytes,
-	)
-}
-
 func getConfig(path string) *config.Config {
 	path = config.Filepath(path).Path()
 	fi, err := os.Stat(path)

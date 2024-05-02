@@ -70,8 +70,6 @@ type CompassValset struct {
 type CompassConsensus struct {
 	Valset     CompassValset
 	Signatures []Signature
-
-	originalSignatures [][]byte
 }
 
 type CompassLogicCallArgs struct {
