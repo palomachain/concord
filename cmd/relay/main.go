@@ -202,7 +202,15 @@ func buildCompassConsensus(v *types.Valset, signatures []types.ValidatorSignatur
 	}
 
 	for i := range v.Snapshot.Validators {
-		sig, ok := signatureMap[v.Snapshot.Validators[i].Address]
+		address := ""
+		for _, ci := range v.Snapshot.Validators[i].ExternalChainInfos {
+			if ci.ChainReferenceID != "eth-main" {
+				continue
+			}
+			address = ci.Address
+			break
+		}
+		sig, ok := signatureMap[address]
 		if !ok {
 			con.Signatures = append(con.Signatures,
 				types.Signature{
