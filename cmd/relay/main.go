@@ -33,7 +33,7 @@ import (
 
 const (
 	cMaxPower              = 1 << 32
-	cCompassCheckpointHex  = "f006307ee11e2593727804b5a57ddbb254694d0d0b6c6dbb47dba5b38491defc"
+	cCompassCheckpointHex  = "0xf006307ee11e2593727804b5a57ddbb254694d0d0b6c6dbb47dba5b38491defc"
 	cTargetContractAddress = "0x34bc9970228b14a76ebf0a7f5a601001bbca20c8"
 )
 
