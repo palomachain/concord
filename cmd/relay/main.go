@@ -18,7 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/palomachain/concord/config"
 	"github.com/palomachain/concord/types"
@@ -28,7 +30,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-const cMaxPower = 1 << 32
+const (
+	cMaxPower              = 1 << 32
+	cCompassCheckpointHex  = "F006307EE11E2593727804B5A57DDBB254694D0D0B6C6DBB47DBA5B38491DEFC"
+	cTargetContractAddress = "0x34bc9970228b14a76ebf0a7f5a601001bbca20c8"
+)
 
 func main() {
 	log.SetOutput(os.Stdout)
@@ -152,9 +158,20 @@ func submitLogicCall(
 ) (*ethtypes.Transaction, error) {
 	d := msg.Msg.(primitive.D)
 	compass := (d.Map()["compassaddr"]).(string)
+	turnstoneID := d.Map()["turnstoneid"].(string)
 	con := buildCompassConsensus(valset, msg.Signatures)
+
+	cp, err := makeCheckpoint(abi, con.Valset, turnstoneID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make checkpoint: %w", err)
+	}
+
+	if hexutil.Encode(cp) != cCompassCheckpointHex {
+		return nil, fmt.Errorf("incorrect checkpoint, want %s, got %s", cCompassCheckpointHex, hexutil.Encode(cp))
+	}
+
 	compassArgs := types.CompassLogicCallArgs{
-		LogicContractAddress: ethcommon.HexToAddress(compass),
+		LogicContractAddress: ethcommon.HexToAddress(cTargetContractAddress),
 		Payload:              msg.BytesToSign,
 	}
 
@@ -435,4 +452,45 @@ func getEthConfig(cfg *config.Config) *config.EVM {
 	}
 
 	panic("no configuration for eth-main found.")
+}
+
+func mustType[T any](val T, err error) T {
+	if err != nil {
+		panic(fmt.Sprintf("failed to create type: %v", err))
+	}
+	return val
+}
+
+func makeCheckpoint(aabi abi.ABI, v types.CompassValset, turnstoneID string) ([]byte, error) {
+	arguments := abi.Arguments{
+		{Type: mustType(abi.NewType("address[]", "", nil))},
+		{Type: mustType(abi.NewType("uint256[]", "", nil))},
+		{Type: mustType(abi.NewType("uint256", "", nil))},
+		{Type: mustType(abi.NewType("bytes32", "", nil))},
+	}
+
+	var turnstoneBytes32 [32]byte
+	copy(turnstoneBytes32[:], turnstoneID)
+
+	method := abi.NewMethod("checkpoint", "checkpoint", abi.Function, "", false, false, arguments, abi.Arguments{})
+
+	methodNameBytes := []uint8("checkpoint")
+	var batchMethodName [32]uint8
+	copy(batchMethodName[:], methodNameBytes)
+
+	abiEncodedBatch, err := arguments.Pack(
+		v.Validators,
+		v.Powers,
+		v.ValsetId,
+		turnstoneBytes32,
+	)
+	// this should never happen outside of test since any case that could crash on encoding
+	// should be filtered above.
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack checkpoint: %w", err)
+	}
+
+	abiEncodedBatch = append(method.ID[:], abiEncodedBatch...)
+
+	return crypto.Keccak256(abiEncodedBatch), nil
 }
