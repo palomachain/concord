@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -32,7 +33,7 @@ import (
 
 const (
 	cMaxPower              = 1 << 32
-	cCompassCheckpointHex  = "F006307EE11E2593727804B5A57DDBB254694D0D0B6C6DBB47DBA5B38491DEFC"
+	cCompassCheckpointHex  = "f006307ee11e2593727804b5a57ddbb254694d0d0b6c6dbb47dba5b38491defc"
 	cTargetContractAddress = "0x34bc9970228b14a76ebf0a7f5a601001bbca20c8"
 )
 
@@ -166,7 +167,7 @@ func submitLogicCall(
 		return nil, fmt.Errorf("failed to make checkpoint: %w", err)
 	}
 
-	if hexutil.Encode(cp) != cCompassCheckpointHex {
+	if strings.ToLower(hexutil.Encode(cp)) != cCompassCheckpointHex {
 		return nil, fmt.Errorf("incorrect checkpoint, want %s, got %s", cCompassCheckpointHex, hexutil.Encode(cp))
 	}
 
