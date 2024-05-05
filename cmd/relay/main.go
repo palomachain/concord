@@ -210,7 +210,7 @@ func buildCompassConsensus(v *types.Valset, signatures []types.ValidatorSignatur
 			if ci.ChainReferenceID != "eth-main" {
 				continue
 			}
-
+      
 			address = ci.Address
 			break
 		}
