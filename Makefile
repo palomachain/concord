@@ -71,6 +71,20 @@ whisper: go.sum
 whisper-linux: go.sum
 	GOOS=linux GOARCH=amd64 $(MAKE) whisper
 
+scribe: go.sum
+	@echo "--> Building..."
+	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILD_DIR)/ ./cmd/scribe
+
+scribe-linux: go.sum
+	GOOS=linux GOARCH=amd64 $(MAKE) scribe
+
+relay: go.sum
+	@echo "--> Building..."
+	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILD_DIR)/ ./cmd/relay
+
+relay-linux: go.sum
+	GOOS=linux GOARCH=amd64 $(MAKE) relay
+
 test:
 	@echo "--> Testing..."
 	@gotestsum ./...

@@ -4,13 +4,18 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/palomachain/concord/config"
 	"github.com/palomachain/concord/types"
 	evmtypes "github.com/palomachain/paloma/x/evm/types"
@@ -43,6 +48,9 @@ const (
 	// Last observed blockheight of used snapshot
 	// https://download.palomachain.com/paloma_15681076.tar.lz4
 	cLastSnapshotBlockheight int64 = 15681076
+
+	// TargetContractAddress to which to relay to
+	cTargetContractAddress = "0x34bc9970228b14a76ebf0a7f5a601001bbca20c8"
 )
 
 func main() {
@@ -99,11 +107,17 @@ func constructMessage(msgId uint64, payload string) types.QueuedMessage {
 		log.Fatal("failed to parse payload bytes:", err)
 	}
 
+	deadline := time.Now().UTC().Add(time.Hour * 1).Unix()
+	bytesToSign, err := packBytesToSign(string(turnstoneID), bytes, msgId, deadline)
+	if err != nil {
+		log.Fatal("failed to pack bytes to sign:", err)
+	}
+
 	return types.QueuedMessage{
 		ID:               msgId,
 		Nonce:            nonce,
-		BytesToSign:      bytes,
-		PublicAccessData: nil,
+		BytesToSign:      bytesToSign,
+		PublicAccessData: []byte(strconv.FormatInt(deadline, 10)),
 		ErrorData:        nil,
 		Msg: &evmtypes.Message{
 			TurnstoneID:      string(turnstoneID),
@@ -134,4 +148,47 @@ func parseArgs() (uint64, string, error) {
 
 	id, err := strconv.ParseUint(os.Args[1], 10, 64)
 	return id, os.Args[2], err
+}
+
+func mustType[T any](val T, err error) T {
+	if err != nil {
+		panic(fmt.Sprintf("failed to create type: %v", err))
+	}
+	return val
+}
+
+func packBytesToSign(turnstoneID string, payload []byte, msgID uint64, deadline int64) ([]byte, error) {
+	arguments := abi.Arguments{
+		{Type: mustType(abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+			{Name: "address", Type: "address"},
+			{Name: "payload", Type: "bytes"},
+		}))},
+		{Type: mustType(abi.NewType("uint256", "", nil))},
+		{Type: mustType(abi.NewType("bytes32", "", nil))},
+		{Type: mustType(abi.NewType("uint256", "", nil))},
+	}
+
+	method := abi.NewMethod("logic_call", "logic_call", abi.Function, "", false, false, arguments, abi.Arguments{})
+	var bytes32 [32]byte
+	copy(bytes32[:], turnstoneID)
+
+	bytes, err := arguments.Pack(
+		struct {
+			Address ethcommon.Address
+			Payload []byte
+		}{
+			ethcommon.HexToAddress(cTargetContractAddress),
+			payload,
+		},
+		new(big.Int).SetInt64(int64(msgID)),
+		bytes32,
+		big.NewInt(int64(deadline)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack logic_call args: %w", err)
+	}
+
+	bytes = append(method.ID[:], bytes...)
+
+	return crypto.Keccak256(bytes), nil
 }
