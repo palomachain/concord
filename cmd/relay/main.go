@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -160,6 +159,10 @@ func submitLogicCall(
 	d := msg.Msg.(primitive.D)
 	compass := (d.Map()["compassaddr"]).(string)
 	turnstoneID := d.Map()["turnstoneid"].(string)
+	deadline, err := strconv.ParseInt(string(msg.PublicAccessData), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse deadline: %w", err)
+	}
 	con := buildCompassConsensus(valset, msg.Signatures)
 
 	cp, err := makeCheckpoint(abi, con.Valset, turnstoneID)
@@ -180,7 +183,7 @@ func submitLogicCall(
 		con,
 		compassArgs,
 		new(big.Int).SetInt64(int64(msg.ID)),
-		new(big.Int).SetInt64(time.Now().UTC().Add(time.Minute * 10).Unix()),
+		new(big.Int).SetInt64(deadline),
 	}
 
 	compassAddr := ethcommon.HexToAddress(compass)
@@ -202,7 +205,16 @@ func buildCompassConsensus(v *types.Valset, signatures []types.ValidatorSignatur
 	}
 
 	for i := range v.Snapshot.Validators {
-		sig, ok := signatureMap[v.Snapshot.Validators[i].Address]
+		address := ""
+		for _, ci := range v.Snapshot.Validators[i].ExternalChainInfos {
+			if ci.ChainReferenceID != "eth-main" {
+				continue
+			}
+
+			address = ci.Address
+			break
+		}
+		sig, ok := signatureMap[address]
 		if !ok {
 			con.Signatures = append(con.Signatures,
 				types.Signature{
