@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ const (
 	cMaxPower              = 1 << 32
 	cCompassCheckpointHex  = "0xf006307ee11e2593727804b5a57ddbb254694d0d0b6c6dbb47dba5b38491defc"
 	cTargetContractAddress = "0x34bc9970228b14a76ebf0a7f5a601001bbca20c8"
+	cSignedMessagePrefix   = "\x19Ethereum Signed Message:\n32"
 )
 
 func main() {
@@ -139,12 +141,18 @@ func getMsg(id uint64) (types.MessageWithSignatures, error) {
 			continue
 		}
 
+		fmt.Printf("Key: %v, Value: %v\n", iter.Key(), iter.Value())
+
 		addr := ethcommon.BytesToAddress(iter.Key())
+		signature := make([]byte, len(iter.Value()))
+		copy(signature, iter.Value())
 		mws.Signatures = append(mws.Signatures, types.ValidatorSignature{
-			Signature:       iter.Value(),
+			Signature:       signature,
 			SignedByAddress: addr.Hex(),
 		})
 	}
+
+	fmt.Printf("+++++++++++\n%+v\n++++++++++", mws)
 
 	return mws, nil
 }
@@ -157,13 +165,21 @@ func submitLogicCall(
 	abi abi.ABI,
 ) (*ethtypes.Transaction, error) {
 	d := msg.Msg.(primitive.D)
+	fmt.Printf("d: %+v\n", d)
 	compass := (d.Map()["compassaddr"]).(string)
 	turnstoneID := d.Map()["turnstoneid"].(string)
-	deadline, err := strconv.ParseInt(string(msg.PublicAccessData), 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse deadline: %w", err)
-	}
+	action := d.Map()["action"].(primitive.D).Map()["submitlogiccall"].(primitive.D).Map()
+	deadline := action["deadline"].(int64)
+	payload := action["payload"].(primitive.Binary).Data
 	con := buildCompassConsensus(valset, msg.Signatures)
+
+	if err := verifySignatures(context.Background(), &con.Valset, msg); err != nil {
+		return nil, fmt.Errorf("failed to verrify signatures: %v", err)
+	}
+
+	fmt.Printf("deadline: %v\n", deadline)
+	fmt.Printf("payload: %v\n", payload)
+	fmt.Printf("**********************************\n%+v\n*************************\n", con)
 
 	cp, err := makeCheckpoint(abi, con.Valset, turnstoneID)
 	if err != nil {
@@ -176,15 +192,17 @@ func submitLogicCall(
 
 	compassArgs := types.CompassLogicCallArgs{
 		LogicContractAddress: ethcommon.HexToAddress(cTargetContractAddress),
-		Payload:              msg.BytesToSign,
+		Payload:              payload,
 	}
 
 	args := []any{
 		con,
 		compassArgs,
-		new(big.Int).SetInt64(int64(msg.ID)),
+		new(big.Int).SetUint64(msg.ID),
 		new(big.Int).SetInt64(deadline),
 	}
+
+	fmt.Printf("======\n%+v\n========\n", args)
 
 	compassAddr := ethcommon.HexToAddress(compass)
 	tx, err := callSmartContract("submit_logic_call", args, abi, client, signer.addr, compassAddr, signer.keystore)
@@ -204,17 +222,20 @@ func buildCompassConsensus(v *types.Valset, signatures []types.ValidatorSignatur
 		Valset: transformValsetToCompassValset(v),
 	}
 
-	for i := range v.Snapshot.Validators {
+	for _, val := range v.Snapshot.Validators {
 		address := ""
-		for _, ci := range v.Snapshot.Validators[i].ExternalChainInfos {
+		for _, ci := range val.ExternalChainInfos {
 			if ci.ChainReferenceID != "eth-main" {
 				continue
 			}
-      
+
 			address = ci.Address
 			break
 		}
 		sig, ok := signatureMap[address]
+		fmt.Printf("[%s]\t %s\t: %d\t%+v\n", address, val.Address, val.ShareCount, sig)
+		tmp := make([]byte, len(sig.Signature))
+		copy(tmp, sig.Signature)
 		if !ok {
 			con.Signatures = append(con.Signatures,
 				types.Signature{
@@ -225,9 +246,9 @@ func buildCompassConsensus(v *types.Valset, signatures []types.ValidatorSignatur
 		} else {
 			con.Signatures = append(con.Signatures,
 				types.Signature{
-					V: new(big.Int).SetInt64(int64(sig.Signature[64]) + 27),
-					R: new(big.Int).SetBytes(sig.Signature[:32]),
-					S: new(big.Int).SetBytes(sig.Signature[32:64]),
+					V: new(big.Int).SetInt64(int64(tmp[64]) + 27),
+					R: new(big.Int).SetBytes(tmp[:32]),
+					S: new(big.Int).SetBytes(tmp[32:64]),
 				},
 			)
 		}
@@ -506,4 +527,49 @@ func makeCheckpoint(aabi abi.ABI, v types.CompassValset, turnstoneID string) ([]
 	abiEncodedBatch = append(method.ID[:], abiEncodedBatch...)
 
 	return crypto.Keccak256(abiEncodedBatch), nil
+}
+
+func verifySignatures(ctx context.Context, val *types.CompassValset, msg types.MessageWithSignatures) error {
+	signaturesMap := make(map[string]types.ValidatorSignature)
+	for _, sig := range msg.Signatures {
+		signaturesMap[sig.SignedByAddress] = sig
+	}
+	var totalPower uint64
+	for _, pow := range val.Powers {
+		totalPower += uint64(pow.Int64())
+	}
+	powerThreshold := totalPower * 2 / 3
+
+	var s uint64
+	for i := range val.Validators {
+		valHex, pow := val.Validators[i], val.Powers[i]
+		sig, ok := signaturesMap[valHex.Hex()]
+		if !ok {
+			continue
+		}
+		bytesToVerify := crypto.Keccak256(append(
+			[]byte(cSignedMessagePrefix),
+			msg.BytesToSign...,
+		))
+		recoveredPK, err := crypto.Ecrecover(bytesToVerify, sig.Signature)
+		if err != nil {
+			return fmt.Errorf("failed to ecrecover: %w", err)
+		}
+		pk, err := crypto.UnmarshalPubkey(recoveredPK)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal public key: %w", err)
+		}
+		recoveredAddr := crypto.PubkeyToAddress(*pk)
+		recoveredAddrHex := recoveredAddr.Hex()
+		if valHex.Hex() != recoveredAddrHex {
+			return fmt.Errorf("Extract key mismatch, want %s, got %s, i = %d, signed-by = %v, signature = %v", valHex.Hex(), recoveredAddrHex, i, sig.SignedByAddress, base64.StdEncoding.EncodeToString(sig.Signature))
+		}
+		s += uint64(pow.Int64())
+	}
+
+	if s < powerThreshold {
+		return fmt.Errorf("insufficient power")
+	}
+
+	return nil
 }

@@ -102,13 +102,13 @@ func constructMessage(msgId uint64, payload string) types.QueuedMessage {
 	// see: https://github.com/palomachain/paloma/blob/e1433cb86bc94b6bf51fda38898384ebd52add52/x/consensus/keeper/concensus_keeper.go#L644
 	nonce := sdk.Uint64ToBigEndian(cMessageID)
 
-	bytes, err := hexutil.Decode(payload)
+	payloadBz, err := hexutil.Decode(payload)
 	if err != nil {
 		log.Fatal("failed to parse payload bytes:", err)
 	}
 
 	deadline := time.Now().UTC().Add(time.Hour * 1).Unix()
-	bytesToSign, err := packBytesToSign(string(turnstoneID), bytes, msgId, deadline)
+	bytesToSign, err := packBytesToSign(string(turnstoneID), payloadBz, msgId, deadline)
 	if err != nil {
 		log.Fatal("failed to pack bytes to sign:", err)
 	}
@@ -117,13 +117,17 @@ func constructMessage(msgId uint64, payload string) types.QueuedMessage {
 		ID:               msgId,
 		Nonce:            nonce,
 		BytesToSign:      bytesToSign,
-		PublicAccessData: []byte(strconv.FormatInt(deadline, 10)),
+		PublicAccessData: nil,
 		ErrorData:        nil,
 		Msg: &evmtypes.Message{
 			TurnstoneID:      string(turnstoneID),
 			ChainReferenceID: cChainReferenceID,
 			Action: &evmtypes.Message_SubmitLogicCall{
-				SubmitLogicCall: &evmtypes.SubmitLogicCall{},
+				SubmitLogicCall: &evmtypes.SubmitLogicCall{
+					HexContractAddress: cTargetContractAddress,
+					Payload:            payloadBz,
+					Deadline:           deadline,
+				},
 			},
 			CompassAddr:           cCompassAddress,
 			Assignee:              cVolumeFiOperatorAddress,
@@ -172,6 +176,7 @@ func packBytesToSign(turnstoneID string, payload []byte, msgID uint64, deadline 
 	var bytes32 [32]byte
 	copy(bytes32[:], turnstoneID)
 
+	// confirmed: turnstoneID is correct here
 	bytes, err := arguments.Pack(
 		struct {
 			Address ethcommon.Address
@@ -180,9 +185,9 @@ func packBytesToSign(turnstoneID string, payload []byte, msgID uint64, deadline 
 			ethcommon.HexToAddress(cTargetContractAddress),
 			payload,
 		},
-		new(big.Int).SetInt64(int64(msgID)),
+		new(big.Int).SetUint64(msgID),
 		bytes32,
-		big.NewInt(int64(deadline)),
+		new(big.Int).SetInt64(deadline),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack logic_call args: %w", err)
